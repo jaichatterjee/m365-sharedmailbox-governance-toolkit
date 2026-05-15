@@ -18,3 +18,13 @@ function Import-SharedMailboxCSV {
 
     return $CsvData
 }
+
+$CSVData = Import-SharedMailboxCSV
+
+$SharedMailboxes = $CSVData |
+    Select-Object -ExpandProperty Mailbox |
+    Where-Object { $_ -match '@' } |
+    Sort-Object -Unique
+
+Write-Host "`nUnique shared mailboxes loaded:" -ForegroundColor Cyan
+$SharedMailboxes

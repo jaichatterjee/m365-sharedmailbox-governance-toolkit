@@ -22,7 +22,7 @@ function Import-SharedMailboxCSV {
 $CSVData = Import-SharedMailboxCSV
 
 $SharedMailboxes = $CSVData |
-    Select-Object -ExpandProperty PrimarSmtpAddress |
+    Select-Object -ExpandProperty PrimarySmtpAddress |
     Where-Object { $_ -match '@' } |
     Sort-Object -Unique
 

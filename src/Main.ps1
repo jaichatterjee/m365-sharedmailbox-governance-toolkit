@@ -52,6 +52,51 @@ try {
     Write-Host "`nUnique shared mailboxes loaded:" -ForegroundColor Cyan
     $SharedMailboxes
 
+    # =======================================================
+    # PROCESS EACH SHARED MAILBOX & STORE RESULTS
+    # =======================================================
+
+    $MailboxMemberMap = @{}
+
+    foreach ($Mailbox in $SharedMailboxes) {
+
+    Write-Host "`nProcessing mailbox:" $Mailbox -ForegroundColor Yellow
+
+    try {
+        Get-Mailbox -Identity $Mailbox -ErrorAction Stop | Out-Null
+    }
+    catch {
+        Write-Host "Mailbox not found:" $Mailbox -ForegroundColor Red
+        continue
+    }
+
+    $Members = Get-SharedMailboxMembers -Mailbox $Mailbox
+
+    if (-not $Members) {
+        Write-Host "No members found." -ForegroundColor DarkYellow
+        continue
+    }
+
+    $MailboxMemberMap[$Mailbox] = $Members
+    }
+
+    $MailboxMemberMap.GetEnumerator() |
+    ForEach-Object {
+    $Mailbox = $_.Key
+
+    $_.Value |
+    Group-Object User |
+    ForEach-Object {
+        [PSCustomObject]@{
+            Mailbox   = $Mailbox
+            MemberUPN = $_.Name
+        }
+    }
+    } |
+    Export-Csv "C:\SharedMailboxReports\MailboxMemberMap.csv" `
+    -NoTypeInformation -Encoding UTF8
+
+
     # ====================================================
     # EXPORT INDIVIDUAL CSV PER SHARED MAILBOX
     # ====================================================

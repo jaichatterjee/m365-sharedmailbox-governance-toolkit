@@ -4,7 +4,7 @@ function Connect-M365 {
 
     try {
         Write-Host "Connecting to Microsoft Graph..."
-        Connect-MgGraph -Scopes "User.Read.All","Directory.Read.All"
+        Connect-MgGraph -Scopes "User.Read.All","Group.Read.All"
 
         Write-Host "Connecting to Exchange Online..."
         Connect-ExchangeOnline -ShowBanner:$false

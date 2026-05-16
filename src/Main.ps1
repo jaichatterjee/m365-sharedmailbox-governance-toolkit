@@ -1,23 +1,30 @@
-# Load configuration
+# ===================================
+# Load Configuration
+# ===================================
+
 . "$PSScriptRoot\Config\config.ps1"
 
-# Load logging
+# ===================================
+# Load Logging
+# ===================================
 
 Get-ChildItem `
 "$PSScriptRoot\Logging\*.ps1" |
 ForEach-Object {
 
-. $_
+    . $_
 
 }
 
-# Load functions
+# ===================================
+# Load Functions
+# ===================================
 
 Get-ChildItem `
 "$PSScriptRoot\Functions\*.ps1" |
 ForEach-Object {
 
-. $_
+    . $_
 
 }
 
@@ -26,67 +33,36 @@ Write-Log `
 
 try {
 
+    # ==========================
+    # CONNECT TO SERVICES
+    # ==========================
+
     Connect-M365
 
-    Import-SharedMailboxCSV
-    
-    }
+    # ==========================
+    # IMPORT CSV
+    # ==========================
+    $CSVData = Import-SharedMailboxCSV
 
-# =======================================================
-# PROCESS EACH SHARED MAILBOX & STORE RESULTS
-# =======================================================
+    $SharedMailboxes = $CSVData |
+    Select-Object -ExpandProperty PrimarySmtpAddress |
+    Where-Object { $_ -match '@' } |
+    Sort-Object -Unique
 
-$MailboxMemberMap = @{}
+    Write-Host "`nUnique shared mailboxes loaded:" -ForegroundColor Cyan
+    $SharedMailboxes
 
-foreach ($Mailbox in $SharedMailboxes) {
+    # ====================================================
+    # EXPORT INDIVIDUAL CSV PER SHARED MAILBOX
+    # ====================================================
 
-    Write-Host "`nProcessing mailbox:" $Mailbox -ForegroundColor Yellow
+    $ExportRoot = "C:\SharedMailboxReports"
 
-    try {
-        Get-Mailbox -Identity $Mailbox -ErrorAction Stop | Out-Null
-    }
-    catch {
-        Write-Host "Mailbox not found:" $Mailbox -ForegroundColor Red
-        continue
-    }
-
-    $Members = Get-SharedMailboxMembers -Mailbox $Mailbox
-
-    if (-not $Members) {
-        Write-Host "No members found." -ForegroundColor DarkYellow
-        continue
-    }
-
-    $MailboxMemberMap[$Mailbox] = $Members
-}
-
-$MailboxMemberMap.GetEnumerator() |
-ForEach-Object {
-    $Mailbox = $_.Key
-
-    $_.Value |
-    Group-Object User |
-    ForEach-Object {
-        [PSCustomObject]@{
-            Mailbox   = $Mailbox
-            MemberUPN = $_.Name
-        }
-    }
-} |
-Export-Csv "C:\SharedMailboxReports\MailboxMemberMap.csv" `
-    -NoTypeInformation -Encoding UTF8
-
-# ====================================================
-# EXPORT INDIVIDUAL CSV PER SHARED MAILBOX
-# ====================================================
-
-$ExportRoot = "C:\SharedMailboxReports"
-
-if (-not (Test-Path $ExportRoot)) {
+    if (-not (Test-Path $ExportRoot)) {
     New-Item -Path $ExportRoot -ItemType Directory | Out-Null
-}
+    }
 
-foreach ($Mailbox in $MailboxMemberMap.Keys) {
+    foreach ($Mailbox in $MailboxMemberMap.Keys) {
 
     $ExportData =
         $MailboxMemberMap[$Mailbox] |
@@ -105,15 +81,15 @@ foreach ($Mailbox in $MailboxMemberMap.Keys) {
         Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
 
     Write-Host "Exported:" $Path -ForegroundColor Green
-}
+    }
 
-# =================================
-# ENTRA ID USER DETAILS
-# =================================
+    # =================================
+    # ENTRA ID USER DETAILS
+    # =================================
 
-$MailboxUserDetails = @{}
+    $MailboxUserDetails = @{}
 
-foreach ($Mailbox in $MailboxMemberMap.Keys) {
+    foreach ($Mailbox in $MailboxMemberMap.Keys) {
 
     $UserDetails = foreach ($Entry in $MailboxMemberMap[$Mailbox]) {
 
@@ -137,23 +113,23 @@ foreach ($Mailbox in $MailboxMemberMap.Keys) {
     }
 
     $MailboxUserDetails[$Mailbox] = $UserDetails
-}
+    }   
 
 
-$MailboxUserDetails.GetEnumerator() |
-ForEach-Object {
+    $MailboxUserDetails.GetEnumerator() |
+    ForEach-Object {
     $Mailbox = $_.Key
     $_.Value | Select-Object @{n='Mailbox';e={$Mailbox}},
                                UserUPN, DisplayName, JobTitle, Department
-} | Export-Csv "C:\SharedMailboxReports\MailboxUserDetails.csv" `
+    } | Export-Csv "C:\SharedMailboxReports\MailboxUserDetails.csv" `
+    -NoTypeInformation -Encoding UTF8
+    # ======================================
+    # APPLY HIERARCHY PER MAILBOX
+    # ======================================
 
-# ======================================
-# APPLY HIERARCHY PER MAILBOX
-# ======================================
+    $MailboxHierarchyReports = @{}
 
-$MailboxHierarchyReports = @{}
-
-foreach ($Mailbox in $MailboxUserDetails.Keys) {
+    foreach ($Mailbox in $MailboxUserDetails.Keys) {
 
     $HierarchyReport = foreach ($User in $MailboxUserDetails[$Mailbox]) {
 
@@ -170,10 +146,10 @@ foreach ($Mailbox in $MailboxUserDetails.Keys) {
     }
 
     $MailboxHierarchyReports[$Mailbox] = $HierarchyReport
-}
+    }
 
-$MailboxHierarchyReports.GetEnumerator() |
-ForEach-Object {
+    $MailboxHierarchyReports.GetEnumerator() |
+    ForEach-Object {
     $Mailbox = $_.Key
     foreach ($User in $_.Value) {
         [PSCustomObject]@{
@@ -186,29 +162,29 @@ ForEach-Object {
             EvaluatedOn    = $User.EvaluatedOn
         }
     }
-} |
-Export-Csv "C:\SharedMailboxReports\MailboxHierarchyReports.csv" `
--NoTypeInformation -Encoding UTF8
+    } |
+    Export-Csv "C:\SharedMailboxReports\MailboxHierarchyReports.csv" `
+    -NoTypeInformation -Encoding UTF8
 
-# ================================================
-# RELSOVE APPROVER PER SHARED MAILBOX
-# ================================================
+    # ================================================
+    # RELSOVE APPROVER PER SHARED MAILBOX
+    # ================================================
 
-$MailboxApprovers = @{}
+    $MailboxApprovers = @{}
 
-foreach ($Mailbox in $MailboxHierarchyReports.Keys) {
+    foreach ($Mailbox in $MailboxHierarchyReports.Keys) {
 
     $Approver = Get-ApproverFromHierarchy `
         -HierarchyData $MailboxHierarchyReports[$Mailbox]
 
     $MailboxApprovers[$Mailbox] = $Approver
-}
+    }
  
-# ===================================
-# FINAL APPROVER REPORT
-# ===================================
+    # ===================================
+    # FINAL APPROVER REPORT
+    # ===================================
 
-$FinalApproverReport = foreach ($Mailbox in $MailboxApprovers.Keys) {
+    $FinalApproverReport = foreach ($Mailbox in $MailboxApprovers.Keys) {
 
     $A = $MailboxApprovers[$Mailbox]
 
@@ -220,44 +196,19 @@ $FinalApproverReport = foreach ($Mailbox in $MailboxApprovers.Keys) {
         Department     = $A.Department
         HierarchyDepth = $A.HierarchyDepth
     }
-}
+    }
 
-$FinalApproverReport |
+    $FinalApproverReport |
     Export-Csv "C:\SharedMailboxReports\Mailbox_Approvers.csv" `
     -NoTypeInformation -Encoding UTF8
 
-    Write-Log `
-    -Message "Processing complete"
-
-}
-
-catch {
+    
+    catch {
 
     Write-Log `
     -Message $_ `
     -Level ERROR
 
-}
+    }
 
-
-
-# =======================================================
-# OPTIONAL: GET ALL AVAILABLE MAILBOXES IN TENNANT
-# =======================================================
-
-$SharedMailboxes = Get-EXOMailbox `
-     -RecipientTypeDetails SharedMailbox `
-     -ResultSize Unlimited `
-    -PropertySets All
-
-$SharedMailboxes| `
-Select-Object DisplayName, PrimarySmtpAddress, `
-Database, IsExcludedFromServingHierarchy, `
-IsHierarchyReady, IsHierarchyEnabled, `
-MailboxLocations, IsMailboxEnabled, `
-RecipientLimits, WhenMailboxCreated, `
-WhenChanged, UsageLocation, IsInactiveMailbox, Alias | `
-Export-Csv -Path "C:\SharedMailboxdata_All.csv" -NoTypeInformation
-
--NoTypeInformation -Encoding UTF8
 
